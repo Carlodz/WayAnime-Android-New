@@ -669,7 +669,7 @@ ipcMain.handle('mlk:get', async (_e, url, post) => {
     const t = await r.text();
     if (r.ok && !mlkBlocked(r.status, t)) return t;
   } catch {}
-  const t = await mlkViaWindow(post ? url.replace(/ajax\/chapters\/?$/, '') : url, post ? url : '');
+  let t = ''; try { t = await mlkViaWindow(post ? url.replace(/ajax\/chapters\/?$/, '') : url, post ? url : ''); } catch {}
   if (!t || mlkBlocked(200, t)) throw new Error('الموقع حاجب الطلب (Cloudflare) — جرّب مرة أخرى بعد شوية');
   return t;
 });
@@ -802,7 +802,7 @@ ipcMain.handle('sd:streams', async (_e, ref) => {
   ref = ref || {};
   const r = ref.type === 'movie' ? await sdRes.getMovieServers(ref.slug) : await sdRes.getServers(ref.episodeId);
   if (r.blocked) return { streams: [], note: String(r.reason || 'محظورة') };
-  const list = (await sdRes.orderServers(r.servers || [], { probe: false })).slice(0, 8);
+  const list = (await sdRes.orderServers(r.servers || [], { probe: false })).slice(0, 14);
   const got = await Promise.all(list.map(async (s) => {
     try { const x = await Promise.race([sdUni.resolve(s.embedUrl), new Promise((r) => setTimeout(() => r(null), 12000))]); return x && x.url ? { name: s.name || 'server', url: x.url, type: x.type, referer: x.referer } : null; } catch { return null; }
   }));
@@ -820,6 +820,10 @@ function toEmbed(u) {
     if (/mp4upload/i.test(h)) return `https://www.mp4upload.com/embed-${id.replace(/\.html$/, '')}.html`;
     if (/dsvplay|dood|d000d|ds2play/i.test(h)) return `https://${h}/e/${id}`;
     if (/voe\.sx/i.test(h)) return `https://voe.sx/e/${id}`;
+    if (/mixdrop|mixdrp|mdy48tn|mxcontent/i.test(h)) return `https://${h}/e/${id}`;
+    if (/vidmoly|vidoza/i.test(h)) return `https://${h}/embed-${id.replace(/\.html?$/, '')}.html`;
+    if (/streamwish|awish|dwish|wishfast|embedwish|hlswish|swhoi|sfastwish|strwish|wishonly|vidhide|vidhidepro|vidhidevip|dhcplay|filelions|vidspeed|callistanise|filemoon|moonplayer|kerapoxy|bysezoxexe|lulustream|luluvdo|lulu\.st|streamhg|earnvids|upstream|vtube/i.test(h)) return /\/(?:e|embed)\//.test(x.pathname) ? u : `https://${h}/e/${id}`;
+    if (/streamtape|strtape|shavetape|stape\./i.test(h)) return `https://${h}/e/${id}`;
   } catch {}
   return u;
 }
