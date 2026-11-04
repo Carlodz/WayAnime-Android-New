@@ -190,6 +190,41 @@
   if (baseSdStreams) handlers['sd:streams'] = async (e, ref) => { const r = await baseSdStreams(e, ref); return r && Array.isArray(r.streams) ? Object.assign({}, r, { streams: r.streams.map(wrapStream) }) : r; };
   if (baseResolve) handlers['host:resolve'] = async (e, u) => wrapStream(await baseResolve(e, u));
 
+  /* ---------- مانجا ليك خلف Cloudflare: متصفح WebView حقيقي (MainActivity.WaNative) ---------- */
+  const nat = Object.create(null);
+  window.__waHtml = (id, html) => { const f = nat['h' + id]; if (f) { delete nat['h' + id]; f(html); } };
+  window.__waVerified = (id) => { const f = nat['v' + id]; if (f) { delete nat['v' + id]; f(true); } };
+  const nid = () => Math.random().toString(36).slice(2);
+  let natQ = Promise.resolve();
+  const natSerial = (fn) => (natQ = natQ.then(fn, fn));          // طلب واحد في كل مرة
+  const nativeHtml = (url, post) => natSerial(() => new Promise((ok) => {
+    const id = nid(); nat['h' + id] = ok;
+    try { window.WaNative.fetchHtml(id, url, post || ''); } catch { delete nat['h' + id]; return ok(''); }
+    setTimeout(() => { if (nat['h' + id]) { delete nat['h' + id]; ok(''); } }, 50000);
+  }));
+  let verifying = null;
+  const nativeVerify = (url) => verifying || (verifying = new Promise((ok) => {
+    const id = nid(); nat['v' + id] = ok;
+    try { window.WaNative.verify(id, url); } catch { delete nat['v' + id]; ok(false); }
+  }).finally(() => { verifying = null; }));
+  const cfBlocked = (t) => !t || /Just a moment|cf-chl|challenge-platform|Attention Required/i.test(String(t).slice(0, 6000));
+  const baseMlk = handlers['mlk:get']; let mlkWvUntil = 0;
+  if (baseMlk) handlers['mlk:get'] = async (e, url, post) => {
+    if (!(window.WaNative && window.WaNative.fetchHtml)) return baseMlk(e, url, post);
+    let u; try { u = new URL(String(url || '')); } catch { throw new Error('رابط غير صالح'); }
+    if (u.protocol !== 'https:' || u.hostname !== 'mangalik.net') throw new Error('رابط غير صالح');
+    if (Date.now() >= mlkWvUntil) { try { return await baseMlk(e, url, post); } catch {} }   // الطريق السريع أولاً
+    const lu = post ? String(url).replace(/ajax\/chapters\/?$/, '') : String(url), pu = post ? String(url) : '';
+    let t = await nativeHtml(lu, pu);
+    if (cfBlocked(t)) {                 // يحتاج تحقق يدوي: نافذة المتصفح ثم نعيد المحاولة
+      await nativeVerify(lu);
+      t = await nativeHtml(lu, pu);
+    }
+    if (cfBlocked(t)) throw new Error('الموقع يطلب تحقق Cloudflare — أكمله ثم أعد المحاولة');
+    mlkWvUntil = Date.now() + 15 * 60e3;
+    return t;
+  };
+
   /* ---------- وظائف خاصة بالأندرويد ---------- */
   function openExternal(url) {
     if (!/^(https?|magnet|intent):/i.test(String(url))) return false;

@@ -43,3 +43,45 @@ html.android #pl .ptop{padding-top:max(8px,env(safe-area-inset-top))}
 .wa-ed-box textarea{flex:1;min-height:50vh;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.5 monospace;resize:none}
 .wa-ed-box div{display:flex;gap:10px;justify-content:flex-end}
 .wa-ed-box button{padding:9px 18px;border-radius:10px;border:0;font-weight:700}
+
+/* ===== ترتيب واجهة الموبايل (يطغى على القواعد السابقة) ===== */
+@media (max-width:900px){
+  html.android header{height:56px!important;padding:max(6px,env(safe-area-inset-top)) 14px 6px!important;gap:8px!important;
+    background:linear-gradient(#0b0a10f2,#0b0a10b3 70%,transparent)!important;box-sizing:content-box}
+  html.android .brand .logo{height:34px;width:auto}
+  /* البحث: زر أيقونة صغير بدل الصندوق الكبير */
+  html.android .sb{flex:0 0 42px!important;width:42px!important;min-width:42px!important;max-width:42px!important;padding:0!important;justify-content:center;height:42px;border-radius:12px}
+  html.android .sb input{display:none!important}
+  html.android .sb button{order:0}
+  /* المحتوى لا يختبئ تحت الشريط العلوي */
+  html.android .wrap.hh main#view>.sec:first-child{padding-top:calc(72px + env(safe-area-inset-top))}
+  html.android main#view{padding-inline:0!important;padding-top:calc(64px + env(safe-area-inset-top))}
+  html.android .wrap.hh main#view{padding-top:0!important}
+  html.android main#view>.sec{padding-inline:12px}
+  html.android .hero,html.android .hero:has(.chars .ch){height:clamp(300px,44vh,380px)!important}
+  html.android .hero h2{font-size:28px!important;line-height:1.2}
+  html.android .hero>div{bottom:56px!important;inset-inline-start:14px!important;max-width:calc(100% - 28px)!important}
+  html.android .hero .acts{margin-bottom:0}
+  /* شريط الفلاتر: صفوف أفقية قابلة للتمرير */
+  html.android .fbar{flex-direction:column;align-items:stretch;gap:10px;margin-bottom:16px}
+  html.android .fbar .chips{flex-wrap:nowrap;overflow-x:auto;gap:8px;padding-bottom:2px;scrollbar-width:none}
+  html.android .fbar .chip{flex:0 0 auto;white-space:nowrap;font-size:13px;height:38px;padding:0 14px}
+  html.android .fbar .gsel{align-self:flex-start;position:relative}
+  html.android .fbar #acount{font-size:12px}
+  html.android .gpanel{max-height:55vh;max-width:calc(100vw - 24px)}
+  /* بطاقات أنظف */
+  html.android .grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:10px!important}
+  html.android .card p{font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  html.android #amore,html.android #mmore{min-width:160px}
+}
+@media (max-width:330px){html.android .grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+
+/* بانر الرئيسية (hhero) على الموبايل */
+@media (max-width:900px){
+  html.android .hhero{height:clamp(340px,50vh,430px)!important}
+  html.android .hbody{inset-inline:14px!important;max-width:none!important;bottom:50px!important}
+  html.android .hbody h2{font-size:26px!important;line-height:1.2}
+  html.android .hdesc{-webkit-line-clamp:2!important;font-size:13px;line-height:1.6;margin-bottom:12px}
+  html.android .hdots{bottom:20px!important;inset-inline-start:14px!important}
+  html.android .hhero+.sec{margin-top:-18px!important}
+}
