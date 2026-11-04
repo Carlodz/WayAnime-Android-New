@@ -177,10 +177,10 @@
   try {
     const m = { exports: {} };
     new Function('require', 'module', 'exports', 'process', '__dirname', 'Buffer', 'fetch', loadText('logic/main.js'))(makeRequire(''), m, m.exports, proc, '/', Buf, nfetch);
-  } catch (e) { console.error('[bridge] main logic failed:', e); }
+  } catch (e) { console.error('[bridge] main logic failed:', e); window.__waMainError = String((e && e.message) || e); }
   const invoke = (ch, ...args) => {
     const h = handlers[ch];
-    if (!h) return Promise.reject(new Error('غير مدعوم: ' + ch));
+    if (!h) return Promise.reject(new Error('غير مدعوم: ' + ch + (window.__waMainError ? ' — السبب: ' + window.__waMainError : '')));
     try { return Promise.resolve(h({ sender: { send: emit } }, ...args)); } catch (e) { return Promise.reject(e); }
   };
 
