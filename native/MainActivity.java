@@ -1,7 +1,20 @@
 package com.wayanime.app;
 
+import android.app.Dialog;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
+import android.webkit.WebSettings;
+import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import org.json.JSONObject;
+import org.json.JSONTokener;
+import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
@@ -16,6 +29,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,6 +45,121 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getBridge().setWebViewClient(new ProxyClient(getBridge()));
+        getBridge().getWebView().addJavascriptInterface(new WaNative(), "WaNative");
+    }
+
+    /* ===== متصفح WebView حقيقي لمواقع Cloudflare (مثل مانجا ليك) =====
+     * يفتح الصفحة كأي متصفح عادي ويقرأ الـ HTML بعد انتهاء فحص المتصفح التلقائي.
+     * إذا طلب الموقع تحققاً يدوياً تظهر نافذة ليُكمله المستخدم بنفسه (verify). */
+    static volatile String CF_UA = null;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+
+    private void deliver(String fn, String id, String payload) {
+        final String js = "window." + fn + "(" + JSONObject.quote(id) + "," + JSONObject.quote(payload == null ? "" : payload) + ")";
+        runOnUiThread(() -> getBridge().getWebView().evaluateJavascript(js, null));
+    }
+
+    private static String unquote(String v) {
+        if (v == null || v.equals("null")) return "";
+        try { Object o = new JSONTokener(v).nextValue(); return o instanceof String ? (String) o : ""; } catch (Exception e) { return ""; }
+    }
+
+    private void cfSettings(WebView w) {
+        WebSettings st = w.getSettings();
+        st.setJavaScriptEnabled(true);
+        st.setDomStorageEnabled(true);
+        CF_UA = st.getUserAgentString();
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(w, true);
+    }
+
+    public class WaNative {
+        @JavascriptInterface
+        public void fetchHtml(final String id, final String url, final String post) {
+            runOnUiThread(() -> new CfJob(id, url, post));
+        }
+        @JavascriptInterface
+        public void verify(final String id, final String url) {
+            runOnUiThread(() -> showVerify(id, url));
+        }
+    }
+
+    public class CfJob {
+        final String id, post;
+        final WebView w;
+        int tries = 0;
+        boolean fin = false, posting = false;
+
+        CfJob(String id, String url, String post) {
+            this.id = id;
+            this.post = post == null ? "" : post;
+            w = new WebView(MainActivity.this);
+            cfSettings(w);
+            w.addJavascriptInterface(this, "WaSink");
+            w.setWebViewClient(new WebViewClient());
+            try {
+                ViewGroup root = (ViewGroup) findViewById(android.R.id.content);
+                w.setAlpha(0f);
+                root.addView(w, new ViewGroup.LayoutParams(1, 1));
+            } catch (Exception ignored) { }
+            w.loadUrl(url);
+            ui.postDelayed(this::tick, 1500);
+        }
+
+        void tick() {
+            if (fin) return;
+            if (++tries > 30) { finish(""); return; }
+            w.evaluateJavascript("document.title", t -> {
+                if (fin) return;
+                String title = t == null ? "" : t.toLowerCase();
+                boolean challenge = title.contains("just a moment") || title.contains("attention required")
+                        || title.contains("checking") || title.contains("\u0644\u062d\u0638\u0629") || title.equals("null") || title.equals("\"\"");
+                if (challenge) { ui.postDelayed(this::tick, 1000); return; }
+                if (!post.isEmpty()) {
+                    if (!posting) {
+                        posting = true;
+                        w.evaluateJavascript("fetch(" + JSONObject.quote(post) + ",{method:'POST',credentials:'include',headers:{'X-Requested-With':'XMLHttpRequest'}})"
+                                + ".then(function(r){return r.text()}).then(function(x){WaSink.done(x)}).catch(function(){WaSink.done('')})", null);
+                    }
+                    return;
+                }
+                w.evaluateJavascript("document.documentElement.outerHTML", v -> finish(unquote(v)));
+            });
+        }
+
+        @JavascriptInterface
+        public void done(final String html) { ui.post(() -> finish(html)); }
+
+        void finish(String html) {
+            if (fin) return;
+            fin = true;
+            deliver("__waHtml", id, html);
+            ui.post(() -> {
+                try { ((ViewGroup) w.getParent()).removeView(w); } catch (Exception ignored) { }
+                try { w.destroy(); } catch (Exception ignored) { }
+            });
+        }
+    }
+
+    private void showVerify(final String id, final String url) {
+        final Dialog d = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        final WebView w = new WebView(this);
+        cfSettings(w);
+        w.setWebViewClient(new WebViewClient());
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        Button b = new Button(this);
+        b.setText("\u062a\u0645 \u0627\u0644\u062a\u062d\u0642\u0642 \u2014 \u0645\u062a\u0627\u0628\u0639\u0629");
+        b.setOnClickListener(v -> d.dismiss());
+        col.addView(b, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        col.addView(w, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        d.setContentView(col);
+        d.setOnDismissListener(x -> {
+            try { w.destroy(); } catch (Exception ignored) { }
+            deliver("__waVerified", id, "1");
+        });
+        d.show();
+        w.loadUrl(url);
     }
 
     static class ProxyClient extends BridgeWebViewClient {
@@ -49,7 +178,82 @@ public class MainActivity extends BridgeActivity {
                     return error(502);
                 }
             }
+            try {
+                WebResourceResponse fr = frameDoc(request, uri);
+                if (fr != null) return fr;
+            } catch (Exception ignored) { /* نرجع للتحميل الافتراضي */ }
             return super.shouldInterceptRequest(view, request);
+        }
+
+        /* صفحات iframe (سيرفرات المشاهدة): نحذف X-Frame-Options و frame-ancestors ونضبط Referer
+         * مثل ما كان يفعل webRequest في نسخة الديسكتوب، وإلا ترفض المواقع العرض داخل التطبيق. */
+        private WebResourceResponse frameDoc(WebResourceRequest req, Uri uri) throws Exception {
+            if (req.isForMainFrame() || !"GET".equalsIgnoreCase(req.getMethod())) return null;
+            String scheme = uri.getScheme();
+            if (scheme == null || !(scheme.equals("https") || scheme.equals("http"))) return null;
+            String h = uri.getHost();
+            if (h == null || h.equals("localhost") || h.equals("127.0.0.1")) return null;
+            Map<String, String> rh = req.getRequestHeaders();
+            if (rh == null) return null;
+            String dest = null, accept = null;
+            for (Map.Entry<String, String> e : rh.entrySet()) {
+                String k = e.getKey().toLowerCase();
+                if (k.equals("sec-fetch-dest")) dest = e.getValue();
+                else if (k.equals("accept")) accept = e.getValue();
+            }
+            boolean isFrame = dest != null ? (dest.equals("iframe") || dest.equals("frame"))
+                    : (accept != null && accept.contains("text/html"));
+            if (!isFrame) return null;
+
+            URL cur = new URL(uri.toString());
+            HttpURLConnection c = null;
+            int code = 0;
+            for (int hop = 0; hop < 6; hop++) {
+                c = (HttpURLConnection) cur.openConnection();
+                c.setInstanceFollowRedirects(false);
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(30000);
+                for (Map.Entry<String, String> e : rh.entrySet()) {
+                    String k = e.getKey().toLowerCase();
+                    if (k.equals("referer") || k.equals("origin") || k.equals("cookie") || k.equals("range") || k.equals("x-requested-with") || k.equals("accept-encoding")) continue;
+                    c.setRequestProperty(e.getKey(), e.getValue());
+                }
+                c.setRequestProperty("Referer", cur.getProtocol() + "://" + cur.getHost() + "/");
+                String ck = CookieManager.getInstance().getCookie(cur.toString());
+                if (ck != null && !ck.isEmpty()) c.setRequestProperty("Cookie", ck);
+                code = c.getResponseCode();
+                List<String> sc = c.getHeaderFields().get("Set-Cookie");
+                if (sc != null) for (String one : sc) CookieManager.getInstance().setCookie(cur.toString(), one);
+                if (code >= 300 && code < 400 && c.getHeaderField("Location") != null) {
+                    cur = new URL(cur, c.getHeaderField("Location"));
+                    c.disconnect();
+                    continue;
+                }
+                break;
+            }
+            if (c == null || code < 100 || (code >= 300 && code < 400)) return null;
+
+            String ct = c.getContentType();
+            String mime = ct == null ? "text/html" : ct.split(";")[0].trim();
+            String enc = null;
+            if (ct != null) { Matcher m = Pattern.compile("charset=([\\w-]+)", Pattern.CASE_INSENSITIVE).matcher(ct); if (m.find()) enc = m.group(1); }
+            Map<String, String> headers = new HashMap<>();
+            for (Map.Entry<String, List<String>> e : c.getHeaderFields().entrySet()) {
+                String k = e.getKey();
+                if (k == null || e.getValue() == null || e.getValue().isEmpty()) continue;
+                String l = k.toLowerCase();
+                if (l.equals("x-frame-options") || l.equals("set-cookie") || l.equals("content-length") || l.equals("content-encoding")
+                        || l.equals("transfer-encoding") || l.equals("content-type") || l.equals("content-security-policy-report-only")) continue;
+                String v = android.text.TextUtils.join(", ", e.getValue());
+                if (l.equals("content-security-policy")) {
+                    v = v.replaceAll("(?i)frame-ancestors[^;]*;?", "");
+                    if (v.trim().isEmpty()) continue;
+                }
+                headers.put(k, v);
+            }
+            InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+            if (in == null) in = new ByteArrayInputStream(new byte[0]);
+            return new WebResourceResponse(mime, enc != null ? enc : (mime.startsWith("text/") ? "utf-8" : null), code, code < 400 ? "OK" : "Error", headers, in);
         }
 
         private WebResourceResponse error(int code) {
@@ -91,6 +295,11 @@ public class MainActivity extends BridgeActivity {
             String host = url.getHost().toLowerCase();
             boolean md = host.equals("mangadex.org") || host.endsWith(".mangadex.org") || host.endsWith(".mangadex.network");
             String ua = UA;
+            String cookie = null;
+            if (image && !md) {
+                if (CF_UA != null) ua = CF_UA;
+                try { cookie = CookieManager.getInstance().getCookie(target); } catch (Exception ignored) { }
+            }
             if (image) {
                 if (md) { ua = "WayAnime/1.0"; ref = null; }
                 else if (ref == null || ref.isEmpty()) ref = "https://mangalik.net/";
@@ -110,6 +319,7 @@ public class MainActivity extends BridgeActivity {
                         c.setConnectTimeout(15000);
                         c.setReadTimeout(30000);
                         c.setRequestProperty("User-Agent", ua);
+                        if (cookie != null && !cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
                         c.setRequestProperty("Accept", image ? "image/avif,image/webp,image/*,*/*" : "*/*");
                         if (ref != null && !ref.isEmpty()) {
                             c.setRequestProperty("Referer", ref);
