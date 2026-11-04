@@ -179,6 +179,36 @@ async function sendvid(u) {
   return m ? { url: decodeEnt(m[1]), type: 'mp4', referer: 'https://sendvid.com/' } : null;
 }
 
+
+// ---- عائلات سيرفرات تُخفي الرابط داخل JS مضغوط (p,a,c,k,e,d): نفتح صفحة /e/ ونفكّها ----
+const PACKED_RE = /streamwish|awish|dwish|wishfast|embedwish|hlswish|swhoi|sfastwish|strwish|wishonly|vidhide|vidhidepro|vidhidevip|dhcplay|filelions|vidspeed|callistanise|filemoon|moonplayer|kerapoxy|bysezoxexe|lulustream|luluvdo|lulu\.st|vidmoly|streamhg|earnvids|minochinos|mivalyo|ryderjet|upstream|vtube|streamvid|uqload|vidoza|vidlox|gounlimited|clipwatching|evoload|hexload|mp4player/i;
+async function packedEmbed(u) {
+  const origin = new URL(u).origin;
+  const id = lastSeg(u).replace(/\.html?$/i, '');
+  let emb = u;
+  if (!/\/(?:e|embed|v|embed-[^/]*)(?:\/|$)|\/embed-/.test(u)) emb = /vidmoly|uqload|vidoza/i.test(origin) ? `${origin}/embed-${id}.html` : `${origin}/e/${id}`;
+  return deep(emb, 1, new Set([emb]), origin + '/');
+}
+async function mixdrop(u) {
+  const origin = new URL(u).origin, id = lastSeg(u);
+  const emb = /\/e\//.test(u) ? u : `${origin}/e/${id}`;
+  const page = await getText(emb, origin + '/');
+  let blob = ''; try { blob = unpackAll(page.text); } catch {}
+  blob = cleanEsc(blob + '\n' + page.text);
+  const m = blob.match(/wurl\s*=\s*["']([^"']+)["']/);
+  if (!m) return null;
+  let url = m[1]; if (url.startsWith('//')) url = 'https:' + url;
+  return { url, type: 'mp4', referer: origin + '/' };
+}
+async function dailymotion(u) {
+  const id = (u.match(/(?:video\/|dai\.ly\/|video=)([a-z0-9]+)/i) || [])[1] || lastSeg(u).split('_')[0];
+  if (!id) return null;
+  const page = await getText(`https://www.dailymotion.com/player/metadata/video/${id}`, 'https://www.dailymotion.com/');
+  let j; try { j = JSON.parse(page.text); } catch { return null; }
+  const a = j && j.qualities && j.qualities.auto && j.qualities.auto[0];
+  return a && a.url ? { url: a.url, type: 'hls', referer: 'https://www.dailymotion.com/' } : null;
+}
+
 async function specific(u, host) {
   if (/streamtape|strtape|strcloud|tapecontent|streamadblock|shavetape|stape\./i.test(host)) return streamtape(u);
   if (/dood|d0+o+d|dsvplay|ds2play|playmogo|vide0\.net|do7go|myvidplay/i.test(host)) return doodstream(u);
@@ -191,6 +221,9 @@ async function specific(u, host) {
   if (/yourupload/i.test(host)) return yourupload(u);
   if (/pixeldrain/i.test(host)) return pixeldrain(u);
   if (/sendvid/i.test(host)) return sendvid(u);
+  if (/mixdrop|mixdrp|mdy48tn|mxcontent|mdbekjwqa|mdfx9dc8n/i.test(host)) return mixdrop(u);
+  if (/dailymotion|(^|\.)dai\.ly$/i.test(host)) return dailymotion(u);
+  if (PACKED_RE.test(host)) return packedEmbed(u);
   return null;
 }
 
