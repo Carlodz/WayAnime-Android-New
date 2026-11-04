@@ -1,8 +1,8 @@
 /* ===== قسم المانجا (MangaDex) ===== */
 const MG = {
-  lang: store.get('mgLang', 'ar'), sort: store.get('mgSort', 'latestUploadedChapter'), q: '',
-  off: 0, total: 0, busy: false, done: false, token: 0, nav: 0, loading: 0,
-  list: [], ids: new Set(), scroll: 0, cache: new Map(), rpc: false, src: store.get('mgSrc', 'md'), desc: store.get('mgDesc', false)
+  lang: store.get('mgLang', 'all'), sort: store.get('mgSort', 'latestUploadedChapter'), q: '',
+  off: 0, offL: 0, doneMd: false, doneMl: false, total: 0, busy: false, done: false, token: 0, nav: 0, loading: 0,
+  list: [], ids: new Set(), scroll: 0, cache: new Map(), rpc: false, src: store.get('mgSrc', 'all'), desc: store.get('mgDesc', false)
 };
 const MG_LANGS = [['ar', 'عربي'], ['en', 'English'], ['all', 'كل اللغات']];
 const MG_SORTS = [['latestUploadedChapter', 'آخر التحديثات'], ['followedCount', 'الأكثر شعبية'], ['rating', 'الأعلى تقييماً'], ['createdAt', 'أحدث إضافة']];
@@ -42,8 +42,8 @@ function mlkCards(doc) {
   });
   return [...by.values()].filter(o => o.name);
 }
-async function mlkList() {
-  const pg = MG.off + 1, q = encodeURIComponent(MG.q);
+async function mlkList(pg) {
+  pg = pg || 1; const q = encodeURIComponent(MG.q);
   let u;
   if (MG.q) u = pg > 1 ? `${MLK}/page/${pg}/?s=${q}&post_type=wp-manga` : `${MLK}/?s=${q}&post_type=wp-manga`;
   else if (MG.sort === 'latestUploadedChapter') u = pg > 1 ? `${MLK}/page/${pg}/` : `${MLK}/`;
@@ -103,9 +103,9 @@ function mgMap(m) {
   return { id: m.id, name, nameEn: t.en || t['ja-ro'] || '', poster, synopsis: d.ar || d.en || '', status: a.status || '', year: a.year || '', tags: (a.tags || []).map(x => (x.attributes.name || {}).en).filter(Boolean).slice(0, 8) };
 }
 
-function mgQuery() {
+function mgQuery(off) {
   const p = new URLSearchParams();
-  p.set('limit', MG_PAGE); p.set('offset', MG.off);
+  p.set('limit', MG_PAGE); p.set('offset', off == null ? MG.off : off);
   if (MG.lang !== 'all') p.append('availableTranslatedLanguage[]', MG.lang);
   p.append('includes[]', 'cover_art');
   ['safe', 'suggestive'].forEach(c => p.append('contentRating[]', c));
@@ -120,11 +120,42 @@ const mgCard = (m) => `<div class="card" tabindex="0" data-mid="${esc(m.id)}"><i
 function mgFoot() {
   const btn = $('#mmore'), cnt = $('#mcount'); if (!btn) return;
   btn.disabled = false; btn.textContent = MG.done ? 'لا يوجد المزيد' : 'تحميل المزيد'; btn.classList.toggle('hide', MG.done);
-  if (cnt) cnt.textContent = MG.list.length ? (MG.list.length + (MG.total > MG.list.length ? ' / ' + MG.total : '') + ' مانجا') : '';
+  if (cnt) cnt.textContent = MG.list.length ? (MG.list.length + (MG.total > MG.list.length ? ' من ' + MG.total : '') + ' مانجا') : '';
+}
+
+
+const mgSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// MangaDex: عدة صفحات (100 لكل واحدة) بالتوازي مع فاصل بسيط لتفادي حد الطلبات
+async function mgFetchMd(n) {
+  const offs = [];
+  for (let k = 0; k < n; k++) { const o = MG.off + k * MG_PAGE; if (o + MG_PAGE > MG_MAX || (MG.total && o >= MG.total)) break; offs.push(o); }
+  if (!offs.length) { MG.doneMd = true; return []; }
+  const rs = await Promise.all(offs.map(async (o, k) => { await mgSleep(k * 260); try { return await mgApi(mgQuery(o)); } catch (e) { return { err: e }; } }));
+  const out = [];
+  for (let k = 0; k < rs.length; k++) {
+    const r = rs[k];
+    if (r.err) { if (!out.length && k === 0) throw r.err; break; }
+    const data = r.data || []; MG.total = r.total || MG.total; MG.off += data.length; out.push(...data.map(mgMap));
+    if (data.length < MG_PAGE || MG.off >= MG.total || MG.off + MG_PAGE > MG_MAX) { MG.doneMd = true; break; }
+  }
+  return out;
+}
+// مانجا ليك: عدة صفحات بالتوازي
+async function mgFetchMl(n) {
+  const rs = await Promise.all([...Array(n)].map((_, k) => mgSleep(k * 200).then(() => mlkList(MG.offL + k + 1)).then((l) => ({ l }), (err) => ({ err }))));
+  const out = [], seen = new Set();
+  for (let k = 0; k < rs.length; k++) {
+    const r = rs[k];
+    if (r.err) { if (!out.length && k === 0) throw r.err; break; }
+    const fresh = r.l.filter(m => !MG.ids.has(m.id) && !seen.has(m.id));
+    fresh.forEach(m => seen.add(m.id)); MG.offL++; out.push(...fresh);
+    if (!fresh.length) { MG.doneMl = true; break; }
+  }
+  return out;
 }
 
 async function mgMore(reset) {
-  if (reset) { MG.list = []; MG.ids = new Set(); MG.off = 0; MG.total = 0; MG.done = false; MG.token++; MG.busy = false; MG.scroll = 0; }
+  if (reset) { MG.list = []; MG.ids = new Set(); MG.off = 0; MG.offL = 0; MG.doneMd = false; MG.doneMl = false; MG.total = 0; MG.done = false; MG.token++; MG.busy = false; MG.scroll = 0; }
   if (MG.busy || MG.done) return;
   const tk = MG.token; MG.busy = true;
   const box = $('#mgrid'), btn = $('#mmore');
@@ -132,21 +163,19 @@ async function mgMore(reset) {
   btn.textContent = 'جارٍ التحميل…'; btn.disabled = true;
   if (reset) box.innerHTML = '<p class="mute">جارٍ التحميل…</p>';
   try {
-    let items;
-    if (MG.src === 'mlk') {       // مانجا ليك: صفحة وحدة فـ كل طلب، ونوقفو كي ما يبقاش جديد
-      const raw = await mlkList();
-      if (tk !== MG.token) return;
-      MG.off++;
-      items = raw.filter(m => !MG.ids.has(m.id));
-      if (!items.length) MG.done = true;
-    } else {
-      const r = await mgApi(mgQuery());
-      if (tk !== MG.token) return;
-      const raw = r.data || [];
-      MG.off += raw.length; MG.total = r.total || MG.total;
-      if (!raw.length || MG.off >= MG.total || MG.off + MG_PAGE > MG_MAX) MG.done = true;
-      items = raw.map(mgMap).filter(m => !MG.ids.has(m.id));
-    }
+    const want = MG.src;
+    const jobs = [];
+    if (want !== 'mlk' && !MG.doneMd) jobs.push(mgFetchMd(want === 'all' ? 2 : 3)); else jobs.push(Promise.resolve([]));
+    if (want !== 'md' && !MG.doneMl) jobs.push(mgFetchMl(want === 'all' ? 2 : 3)); else jobs.push(Promise.resolve([]));
+    const [a, b] = await Promise.allSettled(jobs);
+    if (tk !== MG.token) return;
+    if (a.status === 'rejected' && b.status === 'rejected') throw a.reason;
+    if (want === 'md' && a.status === 'rejected') throw a.reason;
+    if (want === 'mlk' && b.status === 'rejected') throw b.reason;
+    const lists = [a.status === 'fulfilled' ? a.value : [], b.status === 'fulfilled' ? b.value : []];
+    MG.done = want === 'md' ? MG.doneMd : want === 'mlk' ? MG.doneMl : (MG.doneMd && MG.doneMl);
+    if (want === 'all' && (a.status === 'rejected' || b.status === 'rejected') && !lists[0].length && !lists[1].length) MG.done = true;
+    const items = mixLists(lists).filter(m => !MG.ids.has(m.id));
     items.forEach(m => MG.ids.add(m.id));
     if (reset) box.innerHTML = '';
     MG.list.push(...items);
@@ -177,7 +206,7 @@ function openManga(fresh) {
   MG.rpc = true; rpcSet({ type: 0, details: 'يتصفح المانجا', state: 'WayAnime' });
   view.innerHTML = `<div class="sec" id="mgwrap"><div class="fbar">
       <div class="chips" id="fsec">${mgChips()}</div>
-      <div class="chips" id="msrc">${[['md', 'MangaDex'], ['mlk', 'مانجا ليك']].map(([v, n]) => `<button class="chip${v === MG.src ? ' on' : ''}" data-v="${v}">${esc(n)}</button>`).join('')}</div>
+      <div class="chips" id="msrc">${[['all', 'الكل'], ['md', 'MangaDex'], ['mlk', 'مانجا ليك']].map(([v, n]) => `<button class="chip${v === MG.src ? ' on' : ''}" data-v="${v}">${esc(n)}</button>`).join('')}</div>
       <div class="chips" id="mlang"${MG.src === 'mlk' ? ' style="display:none"' : ''}>${MG_LANGS.map(([v, n]) => `<button class="chip${v === MG.lang ? ' on' : ''}" data-l="${v}">${esc(n)}</button>`).join('')}</div>
       <div class="chips" id="msort">${MG_SORTS.map(([v, n]) => `<button class="chip${!MG.q && v === MG.sort ? ' on' : ''}" data-s="${v}">${esc(n)}</button>`).join('')}</div>
       <input id="mq" type="search" placeholder="ابحث عن مانجا…" value="${esc(MG.q)}" style="height:var(--fh);border-radius:var(--r);padding:0 14px;background:var(--panel);border:1px solid var(--line);color:var(--text);min-width:200px">
@@ -205,6 +234,14 @@ function openManga(fresh) {
   box.onclick = (e) => { const c = e.target.closest('.card'); if (c) openMangaInfo(c.dataset.mid); };
   box.onkeydown = (e) => { if (e.key === 'Enter') { const c = e.target.closest('.card'); if (c) openMangaInfo(c.dataset.mid); } };
   $('#mmore').onclick = () => mgMore();
+  if (window.IntersectionObserver) {
+    const mb = $('#mmore');
+    const io = new IntersectionObserver(async (es) => {
+      if (!document.body.contains(mb)) { io.disconnect(); return; }
+      if (es[0].isIntersecting && !MG.busy && !MG.done) { await mgMore(); io.unobserve(mb); io.observe(mb); }
+    }, { root: view, rootMargin: '700px' });
+    io.observe(mb);
+  }
   if (!fresh && MG.list.length) {            // رجوع: نعاودو نعرضو اللي كان محمّل (بلا طلب جديد) ونرجعو لنفس المكان
     box.innerHTML = MG.list.map(mgCard).join(''); mgFoot(); view.scrollTop = MG.scroll || 0;
   } else mgMore(true);

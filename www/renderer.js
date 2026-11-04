@@ -850,12 +850,16 @@ async function a4Eps(m) {
   if (!eps.size) eps.set(m.a4Ep || '1', { num: m.a4Ep || '1', a4: m.a4Url });
   return [...eps.values()].sort((x, y) => parseFloat(x.num) - parseFloat(y.num));
 }
-const A4_HOSTS = [['uqload', 0], ['mp4upload', 1], ['mediafire', 2], ['voe.sx', 3], ['dsvplay', 4], ['doodstream', 4], ['vikingfile', 5], ['megamax', 6]];
+const A4_HOSTS = [['uqload', 0], ['mp4upload', 1], ['mediafire', 2], ['voe.sx', 3], ['dsvplay', 4], ['doodstream', 4], ['dood', 4], ['ds2play', 4],
+  ['streamwish', 5], ['hlswish', 5], ['awish', 5], ['dwish', 5], ['wishfast', 5], ['embedwish', 5], ['filemoon', 5], ['moonplayer', 5], ['vidhide', 5], ['filelions', 5], ['lulustream', 5], ['luluvdo', 5], ['earnvids', 5],
+  ['mixdrop', 6], ['mixdrp', 6], ['streamtape', 6], ['strtape', 6], ['vidmoly', 6], ['ok.ru', 6], ['sendvid', 6], ['sibnet', 6], ['yourupload', 6], ['pixeldrain', 6], ['upstream', 6], ['vtube', 6],
+  ['dailymotion', 7], ['drive.google', 7], ['vk.com', 7], ['vkvideo', 7], ['vikingfile', 8], ['megamax', 9], ['4shared', 9], ['archive.org', 9]];
+const A4_SKIP = /facebook|twitter|instagram|telegram|t\.me|whatsapp|discord|anime4up|aniime4up|youtube\.com\/(?:@|channel|user)|patreon|ko-fi|paypal/i;
 async function a4Links(url) {
   const doc = await a4Html(url), out = [];
   doc.querySelectorAll('table tr').forEach(tr => {
     const a = tr.querySelector('a[href^="http"]'); if (!a) return;
-    const u = a.getAttribute('href'), h = hostOf(u), hit = A4_HOSTS.find(x => h.includes(x[0])); if (!hit) return;
+    const u = a.getAttribute('href'), h = hostOf(u), hit = A4_HOSTS.find(x => h.includes(x[0])) || (A4_SKIP.test(u) ? null : [h, 20]); if (!hit) return;
     const cells = [...tr.querySelectorAll('td')].map(td => td.textContent.trim());
     const q = cells.find(c => /FHD|HD|SD|\d{3,4}p|الجودات/i.test(c)) || '';
     const qr = /FHD/i.test(q) ? 0 : /HD/i.test(q) ? 1 : /SD/i.test(q) ? 2 : 3;
@@ -996,7 +1000,7 @@ const GENRE_ALL = svg('<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-
 const GENRE_CARET = svg('<path d="M6 9l6 6 6-6"/>');
 const AR_SECS = [['latest', 'آخر الإضافات'], ['POPULARITY', 'الأكثر شعبية'], ['HIGHEST_RATE', 'الأعلى تقييماً'], ['AIRING', 'يُعرض حالياً'], ['MANGA', 'مانجا'], ['DUB', 'مدبلج']];
 const AR_TYPES = [['SERIES', 'مسلسلات'], ['MOVIE', 'أفلام'], ['OVA', 'OVA'], ['SPECIAL', 'خاصة']];
-const AR_PAGE = 48;
+const AR_PAGE = 90;
 const AF = { sec: 'latest', genre: '', type: 'SERIES', list: [], seen: newSeen(), off: 0, busy: false, done: false, token: 0, pg: { a4: 1, wit: 1, sd: 1, dub: 1 } };
 
 function arQuery() {
@@ -1100,7 +1104,7 @@ async function arMore(reset) {
   try {
     let fresh = [];
     if (AF.sec === 'DUB' && !AF.genre) {                          // مدبلج: Stardima + Anime4up (صفحات)
-      const N = 45, p = AF.pg.dub++;
+      const N = 90, p = AF.pg.dub++;
       const [sdl, a4d] = await Promise.all([
         sdBatch(AF.off, N).catch((e) => { AF.sdErr = errMsg(e); return []; }),
         AF.type === 'SERIES' ? a4DubPage(p).catch(() => []) : []
@@ -1196,6 +1200,14 @@ async function arLoadCatalog(search) {
     if (!window._gOut) { window._gOut = 1; document.addEventListener('click', (e) => { const p = $('#gpanel'); if (p && !e.target.closest('#fgenre')) p.classList.add('hide'); }); }
   }
   $('#amore').onclick = () => arMore();
+  if (window.IntersectionObserver) {   // تحميل تلقائي عند الوصول لآخر القائمة
+    const ab = $('#amore');
+    const io = new IntersectionObserver(async (es) => {
+      if (!document.body.contains(ab)) { io.disconnect(); return; }
+      if (es[0].isIntersecting && !AF.busy && !AF.done) { await arMore(); io.unobserve(ab); io.observe(ab); }
+    }, { root: view, rootMargin: '700px' });
+    io.observe(ab);
+  }
   await arMore(true);
   buildHomeHero();
 }
@@ -1430,7 +1442,7 @@ async function openAr(id) {
         if (!b.classList.contains('on')) return;
         const pend = btns.some(x => x.st === 'wait'), okAny = btns.some(x => x.st === 'ok');
         // كنبقاو غير السيرفرات اللي خدامين؛ اللي كيتعرضو غير فـ iframe كيبانو غير إلا ما بقا حتى واحد خدام
-        const vis = btns.filter(x => x.st === 'ok' || x.st === 'wait' || (x.st === 'embed' && !okAny && !pend && !left));
+        const vis = btns.filter(x => x.st === 'ok' || x.st === 'wait' || (x.st === 'embed' && (window.api.platform === 'android' || (!okAny && !pend && !left))));
         if (!vis.length) {
           out.innerHTML = '<p class="mute">' + esc(left || pend ? 'جارٍ فحص السيرفرات…' : (note ? 'Stardima: ' + note : 'لم نجد أي سيرفر يعمل لهذه الحلقة حالياً. جرّب حلقة أخرى.')) + '</p>';
           return;
