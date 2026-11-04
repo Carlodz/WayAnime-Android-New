@@ -16,4 +16,3 @@
   // إخفاء زر «تحديث» إذا لم يُضبط مستودع التحديث
   const up = document.getElementById('nUpdate'); if (up && !(window.WA_CFG && window.WA_CFG.UPDATE_REPO)) up.hidden = true;
 })();
-
