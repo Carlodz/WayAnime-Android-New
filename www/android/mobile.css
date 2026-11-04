@@ -1,0 +1,76 @@
+/* من ملف mobile.css الأصلي */
+:root {
+  --bg: #07060c;
+  --card: #12101a;
+  --text: #f0eef5;
+  --muted: #9b97a8;
+  --accent: #7c5cff;
+  --accent2: #a78bfa;
+  --border: rgba(255,255,255,0.08);
+  --radius: 14px;
+  --nav-h: 64px;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Noto Sans", system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* شريط التنقل السفلي */
+nav.bottom-nav, .bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-h);
+  background: rgba(12, 10, 18, 0.92);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 1000;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.bottom-nav button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 8px 4px;
+  min-width: 56px;
+  transition: color 0.2s;
+}
+
+.bottom-nav button.on, .bottom-nav button.active {
+  color: var(--accent);
+}
+
+.bottom-nav button svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+/* محتوى يترك مساحة للشريط السفلي */
+main, .content, #app {
+  padding-bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom));
+}
+
+/* فلاتر وتصنيفات */
+.filters, .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px
+}
