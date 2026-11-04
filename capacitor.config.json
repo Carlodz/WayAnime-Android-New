@@ -1,0 +1,12 @@
+{
+  "appId": "com.wayanime.app",
+  "appName": "WayAnime",
+  "webDir": "www",
+  "backgroundColor": "#07060c",
+  "server": { "androidScheme": "https" },
+  "android": { "allowMixedContent": true, "backgroundColor": "#07060c" },
+  "plugins": {
+    "SplashScreen": { "launchAutoHide": false, "backgroundColor": "#07060c", "showSpinner": false, "androidScaleType": "CENTER_INSIDE" },
+    "StatusBar": { "overlaysWebView": false, "style": "DARK", "backgroundColor": "#07060c" }
+  }
+}

@@ -1,0 +1,23 @@
+name: Build WayAnime APK
+on:
+  push: { branches: [main, master] }
+  workflow_dispatch: {}
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm install
+      - run: npm test
+      - run: npx cap add android
+      - run: node scripts/prepare-android.js
+      - run: npx capacitor-assets generate --android --iconBackgroundColor "#07060c" --splashBackgroundColor "#07060c"
+      - run: npx cap sync android
+      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk WayAnime.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: WayAnime-apk, path: WayAnime.apk }
