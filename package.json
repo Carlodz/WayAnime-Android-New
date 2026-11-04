@@ -5,7 +5,7 @@
   "description": "WayAnime for Android (Capacitor)",
   "scripts": {
     "test": "node scripts/selftest.js",
-    "android:init": "cap add android && node scripts/prepare-android.js && capacitor-assets generate --android --iconBackgroundColor \"#07060c\" --splashBackgroundColor \"#07060c\" && cap sync android",
+    "android:init": "cap add android && node scripts/prepare-android.js && capacitor-assets generate --android --iconBackgroundColor \\\"#07060c\\\" --splashBackgroundColor \\\"#07060c\\\" && cap sync android",
     "android:sync": "node scripts/prepare-android.js && cap sync android",
     "android:apk": "cd android && ./gradlew assembleDebug"
   },
